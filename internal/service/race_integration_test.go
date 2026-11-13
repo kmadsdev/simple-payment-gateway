@@ -119,3 +119,32 @@ func TestConcurrentCaptureAndVoid(t *testing.T) {
 		}
 	}
 }
+
+// TestClientHangUpDoesNotAbortProviderCall: the client goes away while the
+// capture is at the provider. The call must still finish and be recorded,
+// or the gateway would lose a capture the provider may have done.
+func TestClientHangUpDoesNotAbortProviderCall(t *testing.T) {
+	e := newEnv(t)
+	p := e.authorizedCard(t, 1000)
+	g := newGated(e.svc.Acq)
+	e.svc.Acq = g
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.svc.Capture(ctx, e.merchant, p.ID, nil)
+		done <- err
+	}()
+	<-g.entered
+	cancel() // client hung up
+	close(g.release)
+	if err := <-done; err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if g.sawCancel.Load() {
+		t.Fatal("the provider call saw the client's cancellation")
+	}
+	if got := e.checkLedger(t, p.ID); got.Status != payment.StatusCaptured {
+		t.Fatalf("status %s, want captured", got.Status)
+	}
+}

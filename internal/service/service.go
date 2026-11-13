@@ -5,7 +5,8 @@
 // during network I/O:
 //
 //  1. lock the payment, check the rule, insert a pending operation, commit
-//  2. call the provider with the operation id as idempotency key
+//  2. call the provider with the operation id as idempotency key, on a
+//     context detached from the client (see providerCtx)
 //  3. lock the payment again, apply the domain change, record events,
 //     ledger and outbox, mark the operation done, commit
 package service
@@ -75,6 +76,18 @@ func (s *Service) now() time.Time {
 // provider answered, the result must be recorded.
 func finishCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+}
+
+// providerCallLimit bounds phase 2 when the client is gone. The acquirer
+// decorator has its own, shorter budget; this is only a backstop.
+const providerCallLimit = 30 * time.Second
+
+// providerCtx detaches phase 2 from the client. Once a money-moving call is
+// sent, a client hang-up must not abort it: the provider may already have
+// done the work, and an aborted call turns a known result into an unknown
+// one. Request values (request id) are kept.
+func providerCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), providerCallLimit)
 }
 
 // ---- cards ----
@@ -179,10 +192,12 @@ func (s *Service) Authorize(ctx context.Context, merchantID, paymentID string) (
 	if err != nil {
 		return payment.Payment{}, err
 	}
-	res, callErr := s.Acq.Authorize(ctx, acquirer.Request{
+	pctx, pcancel := providerCtx(ctx)
+	res, callErr := s.Acq.Authorize(pctx, acquirer.Request{
 		IdempotencyKey: opID, PaymentID: p.ID, Method: string(p.Method), Amount: p.Amount,
 		Currency: p.Currency, CardToken: p.CardToken, CardLast4: p.CardLast4,
 	})
+	pcancel()
 	fctx, cancel := finishCtx(ctx)
 	defer cancel()
 	if callErr != nil {
@@ -240,7 +255,9 @@ func (s *Service) runOp(ctx context.Context, merchantID, paymentID, kind string,
 	if err != nil {
 		return payment.Payment{}, err
 	}
-	callErr := call(ctx, p, opID, amount)
+	pctx, pcancel := providerCtx(ctx)
+	callErr := call(pctx, p, opID, amount)
+	pcancel()
 	fctx, cancel := finishCtx(ctx)
 	defer cancel()
 	if callErr != nil {
