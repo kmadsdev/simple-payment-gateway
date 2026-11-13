@@ -37,18 +37,27 @@ type Dispatcher struct {
 }
 
 // ProcessOnce claims one batch and tries each message once. It returns
-// how many messages it handled.
+// how many messages it claimed.
+//
+// Shutdown (ctx done) drains: the delivery in flight finishes, bounded by
+// the client timeout, and its result is recorded; no new delivery starts.
+// Claimed messages that were not tried go back to the queue when their
+// lease ends.
 func (d *Dispatcher) ProcessOnce(ctx context.Context) (int, error) {
 	msgs, err := d.Outbox.ClaimOutbox(ctx, d.Batch, d.Lease)
 	if err != nil {
 		return 0, err
 	}
+	dctx := context.WithoutCancel(ctx)
 	for _, m := range msgs {
-		r := d.deliver(ctx, m)
+		if ctx.Err() != nil {
+			break
+		}
+		r := d.deliver(dctx, m)
 		if d.OnResult != nil {
 			d.OnResult(r.Outcome)
 		}
-		if err := d.Outbox.RecordDelivery(ctx, m, r); err != nil {
+		if err := d.Outbox.RecordDelivery(dctx, m, r); err != nil {
 			d.Log.ErrorContext(ctx, "record webhook delivery", "event_id", m.ID, "error", err)
 		}
 	}
@@ -117,5 +126,17 @@ func (d *Dispatcher) Run(ctx context.Context, interval time.Duration) {
 			return
 		case <-time.After(interval):
 		}
+	}
+}
+
+// NewClient returns the HTTP client for webhook delivery. It does not
+// follow redirects: a 3xx answer is a failed attempt. Following them would
+// let a merchant endpoint send the gateway, with a signed payload, to any
+// other host, internal ones included (SSRF). The timeout also bounds how
+// long a shutdown waits for an in-flight delivery.
+func NewClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }

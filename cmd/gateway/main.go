@@ -196,7 +196,7 @@ func serve(log *slog.Logger) error {
 		svc.RunMaintenance(workCtx, envDuration("MAINTENANCE_INTERVAL", 2*time.Second))
 	}()
 	dispatcher := &webhook.Dispatcher{
-		Outbox: svc.Store, Client: &http.Client{Timeout: 10 * time.Second},
+		Outbox: svc.Store, Client: webhook.NewClient(10 * time.Second),
 		Backoff:     resilience.Backoff{Base: envDuration("WEBHOOK_BACKOFF_BASE", 2*time.Second), Max: time.Hour},
 		MaxAttempts: envInt("WEBHOOK_MAX_ATTEMPTS", 8), Batch: 20, Lease: time.Minute, Log: log,
 		OnResult: func(o string) { metrics.WebhookDeliveries.WithLabelValues(o).Inc() },
