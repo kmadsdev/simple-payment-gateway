@@ -318,7 +318,13 @@ func (s *Store) notify(trs []payment.Transition) {
 	}
 }
 
-// Mutate locks the payment, runs fn and records the result.
+// Mutate locks the payment, runs fn and records the result. It is used by
+// background changes (provider sync, expiry). It returns
+// ErrOperationInProgress when a provider call on the payment is in flight:
+// changing the payment under that call (for example expiring an
+// authorization while its capture is at the provider) would lose the
+// call's result. BeginOperation takes the same row lock before it inserts
+// the operation, so the check below cannot miss one.
 func (s *Store) Mutate(ctx context.Context, paymentID string, fn MutateFunc) (payment.Payment, error) {
 	var out payment.Payment
 	var trs []payment.Transition
@@ -326,6 +332,14 @@ func (s *Store) Mutate(ctx context.Context, paymentID string, fn MutateFunc) (pa
 		p, err := lockPayment(ctx, tx, paymentID)
 		if err != nil {
 			return err
+		}
+		var busy bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM payment_operations
+			WHERE payment_id = $1 AND status = 'pending')`, paymentID).Scan(&busy); err != nil {
+			return err
+		}
+		if busy {
+			return ErrOperationInProgress
 		}
 		if trs, err = fn(&p); err != nil {
 			return err

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/kmadsdev/simple-payment-gateway/internal/payment"
+	"github.com/kmadsdev/simple-payment-gateway/internal/store"
 )
 
 // MaintenanceOnce runs one pass of the background work:
@@ -45,7 +47,11 @@ func (s *Service) MaintenanceOnce(ctx context.Context) {
 				}
 				return []payment.Transition{t}, nil
 			})
-			if err != nil {
+			switch {
+			case errors.Is(err, store.ErrOperationInProgress):
+				// A provider call is in flight. Its result decides; the
+				// next pass expires the payment if it is still due.
+			case err != nil:
 				s.Log.WarnContext(ctx, "expire payment", "payment_id", pid, "error", err)
 			}
 		}
