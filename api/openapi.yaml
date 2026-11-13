@@ -1,0 +1,467 @@
+openapi: 3.0.3
+info:
+  title: Simple Payment Gateway (simulated)
+  version: 0.1.0
+  description: |
+    Study project. A payment gateway for an online store, with simulated
+    card and Pix payments. No real money moves and no real provider is called.
+
+    All amounts are integers in minor units (centavos). Currency is BRL.
+    Every mutating request needs an `Idempotency-Key` header.
+    Errors use RFC 7807 (`application/problem+json`).
+servers:
+  - url: http://localhost:8080
+security:
+  - apiKey: []
+tags:
+  - name: cards
+  - name: payments
+  - name: simulator
+  - name: operations
+
+paths:
+  /healthz:
+    get:
+      tags: [operations]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+  /readyz:
+    get:
+      tags: [operations]
+      summary: Readiness probe (database reachable, not shutting down)
+      security: []
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "503": { $ref: "#/components/responses/Problem" }
+  /metrics:
+    get:
+      tags: [operations]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        "200":
+          description: Metrics in the Prometheus text format
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /v1/card-tokens:
+    post:
+      tags: [cards]
+      summary: Tokenize a test card
+      description: |
+        Validates the number (Luhn), the CVV and the expiry. Only the token,
+        a brand guess, the last four digits and the expiry are stored. The
+        full number and the CVV are never stored and never logged.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardTokenRequest" }
+      responses:
+        "201":
+          description: Token created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardToken" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments:
+    post:
+      tags: [payments]
+      summary: Create a payment intent
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePaymentRequest" }
+      responses:
+        "201":
+          description: Payment created in status `created`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [payments]
+      summary: List payments, newest first, with cursor pagination
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema: { type: string }
+      responses:
+        "200":
+          description: One page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PaymentList" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    get:
+      tags: [payments]
+      summary: Get a payment
+      responses:
+        "200":
+          description: The payment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Payment" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/authorize:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    post:
+      tags: [payments]
+      summary: Authorize the payment at the (simulated) provider
+      description: |
+        Card: the result is `authorized`, `declined` (HTTP 200 with
+        `decline_code`) or `pending` (delayed approval). Pix: the result is
+        `pending` with a simulated copy-and-paste payload.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { $ref: "#/components/responses/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/capture:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    post:
+      tags: [payments]
+      summary: Capture an authorized card payment (full or partial)
+      description: One capture per payment. A partial capture releases the rest of the hold.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmountRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/void:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    post:
+      tags: [payments]
+      summary: Void an authorization before capture
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { $ref: "#/components/responses/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/refunds:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    post:
+      tags: [payments]
+      summary: Refund a captured payment (full or partial, never above captured)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AmountRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+        "503": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    get:
+      tags: [payments]
+      summary: State history of a payment (append-only)
+      responses:
+        "200":
+          description: Events, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data, has_more]
+                properties:
+                  object: { type: string, enum: [list] }
+                  has_more: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Event" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /v1/payments/{id}/ledger:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    get:
+      tags: [payments]
+      summary: Double-entry ledger lines of a payment (append-only)
+      responses:
+        "200":
+          description: Ledger lines, oldest first. They always sum to zero.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data, has_more]
+                properties:
+                  object: { type: string, enum: [list] }
+                  has_more: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/LedgerEntry" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+  /v1/simulator/payments/{id}/pix-paid:
+    parameters:
+      - $ref: "#/components/parameters/PaymentID"
+    post:
+      tags: [simulator]
+      summary: Simulate the payer paying a pending Pix charge
+      description: Only when SIMULATOR_ENABLED=true. Plays the bank app and the provider notification.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200": { $ref: "#/components/responses/Payment" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: Merchant API key (`sk_test_...`), created with `gateway create-merchant`.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Unique per operation (1 to 255 characters). Same key and same body:
+        the stored response is replayed with `Idempotent-Replayed: true`.
+        Same key and different body: 422. Same key while the first request
+        still runs: 409. Keys expire after 24 hours.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    PaymentID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, example: pay_3f9a1c0b7e2d4a6f8b10 }
+
+  responses:
+    Payment:
+      description: The payment after the operation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Payment" }
+    Problem:
+      description: RFC 7807 problem
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Status:
+      type: object
+      properties:
+        status: { type: string }
+
+    Amount:
+      type: integer
+      format: int64
+      description: Minor units (centavos). 1050 means R$ 10,50.
+      example: 15990
+
+    CardTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [number, cvv, exp_month, exp_year]
+      properties:
+        number: { type: string, example: "4111 1111 1111 1111", description: Test card number }
+        cvv: { type: string, example: "123" }
+        exp_month: { type: integer, minimum: 1, maximum: 12, example: 12 }
+        exp_year: { type: integer, example: 2030 }
+
+    CardToken:
+      type: object
+      required: [id, object, brand, last4, exp_month, exp_year, created_at]
+      properties:
+        id: { type: string, example: tok_5b2e9d0c1a7f3e8d6c4b }
+        object: { type: string, enum: [card_token] }
+        brand: { type: string, enum: [visa, mastercard, amex, elo, unknown] }
+        last4: { type: string, example: "1111" }
+        exp_month: { type: integer }
+        exp_year: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    CreatePaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, method]
+      properties:
+        amount: { $ref: "#/components/schemas/Amount" }
+        currency: { type: string, enum: [BRL] }
+        method: { type: string, enum: [card, pix] }
+        card_token: { type: string, description: Required when method is card }
+        description: { type: string, maxLength: 255 }
+        reference: { type: string, maxLength: 64, description: Order id in the store }
+
+    AmountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        amount:
+          allOf:
+            - $ref: "#/components/schemas/Amount"
+          description: Omit for the full remaining amount.
+
+    PaymentStatus:
+      type: string
+      enum: [created, pending, authorized, captured, partially_refunded, refunded, voided, expired, declined]
+
+    Payment:
+      type: object
+      required: [id, object, status, method, amount, currency, authorized_amount, captured_amount,
+        refunded_amount, created_at, updated_at]
+      properties:
+        id: { type: string }
+        object: { type: string, enum: [payment] }
+        status: { $ref: "#/components/schemas/PaymentStatus" }
+        method: { type: string, enum: [card, pix] }
+        amount: { $ref: "#/components/schemas/Amount" }
+        currency: { type: string, enum: [BRL] }
+        authorized_amount: { $ref: "#/components/schemas/Amount" }
+        captured_amount: { $ref: "#/components/schemas/Amount" }
+        refunded_amount: { $ref: "#/components/schemas/Amount" }
+        card:
+          type: object
+          properties:
+            brand: { type: string }
+            last4: { type: string }
+        pix:
+          type: object
+          properties:
+            copy_paste: { type: string, description: Simulated payload. No bank app accepts it. }
+            expires_at: { type: string, format: date-time }
+        authorization_expires_at: { type: string, format: date-time }
+        decline_code: { type: string, example: insufficient_funds }
+        description: { type: string }
+        reference: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PaymentList:
+      type: object
+      required: [object, data, has_more]
+      properties:
+        object: { type: string, enum: [list] }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        has_more: { type: boolean }
+        next_cursor: { type: string }
+
+    Event:
+      type: object
+      required: [id, op, to_status, amount, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        op: { type: string, enum: [create, authorize, pending, decline, capture, pix_confirm, void, expire, refund] }
+        from_status: { $ref: "#/components/schemas/PaymentStatus" }
+        to_status: { $ref: "#/components/schemas/PaymentStatus" }
+        amount: { $ref: "#/components/schemas/Amount" }
+        created_at: { type: string, format: date-time }
+
+    LedgerEntry:
+      type: object
+      required: [id, journal_id, kind, account, amount, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        journal_id: { type: string }
+        kind: { type: string, enum: [authorize, capture, release, refund] }
+        account: { type: string, enum: [customer, hold, merchant] }
+        amount:
+          type: integer
+          format: int64
+          description: Debit is positive, credit is negative.
+        created_at: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string, example: invalid_state_transition }
+        field: { type: string }
+        request_id: { type: string }
