@@ -58,6 +58,20 @@ func TestOpenAPIMatchesRoutes(t *testing.T) {
 		if public == rt.Auth {
 			t.Errorf("%s: spec public=%v but route auth=%v", key, public, rt.Auth)
 		}
+		// Status codes the middleware can return on every route it wraps.
+		var must []string
+		if rt.Auth {
+			must = append(must, "401", "429")
+		}
+		if rt.Idem {
+			// missing key, key in progress, body too large, key reused
+			must = append(must, "400", "409", "413", "422")
+		}
+		for _, code := range must {
+			if op.Responses.Value(code) == nil {
+				t.Errorf("%s: status %s can be returned but is not documented", key, code)
+			}
+		}
 	}
 	for key := range inSpec {
 		t.Errorf("spec documents %s but no route serves it", key)
