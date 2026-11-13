@@ -16,7 +16,11 @@ Authorize, capture, void and refund run in three phases:
 
 A partial unique index (`payment_id WHERE status = 'pending'`) allows one in-flight operation per payment. A second concurrent capture or refund gets `409 operation_in_progress`.
 
-Phase 3 runs on a context detached from the client (`context.WithoutCancel` plus a timeout). Once the provider answered, the result must be recorded even if the client hung up.
+Phases 2 and 3 run on a context detached from the client (`context.WithoutCancel` plus a timeout). Once a money-moving call is sent, a client hang-up must not abort it, because the provider may already have done the work. Once the provider answered, the result must be recorded even if the client hung up. Both are tested.
+
+Background jobs (expiry, provider sync) change a payment only when no operation is pending on it. They take the same row lock as phase 1, so an authorization cannot expire under an in-flight capture (tested).
+
+All transactions run at PostgreSQL's default isolation, READ COMMITTED. Correctness comes from the row lock (`SELECT ... FOR UPDATE`), the version check in the `UPDATE`, the partial unique index and the check constraints, not from a stricter isolation level.
 
 ## Consequences
 

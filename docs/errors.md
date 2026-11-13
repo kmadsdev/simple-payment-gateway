@@ -82,7 +82,7 @@ Every error is an RFC 7807 problem (`Content-Type: application/problem+json`):
 
 ## provider_unavailable
 
-503. The (simulated) provider did not answer after the retry budget, or the circuit breaker is open. The payment did not change. Retry after `Retry-After`.
+503. The (simulated) provider did not answer after the retry budget, or the circuit breaker is open. The payment did not change in the gateway. Retry after `Retry-After`. With a real provider, the outcome of a call that timed out would be unknown until reconciled (see ADR 0005).
 
 ## not_ready
 

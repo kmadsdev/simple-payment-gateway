@@ -270,7 +270,8 @@ Cada uma tem uma ADR em [docs/adr](docs/adr/) com o contexto e os trade-offs (em
 
 - Testes unitários table-driven para a state machine, os lançamentos do ledger, money, Luhn, payload Pix, backoff, retry e breaker.
 - Um teste de sequências aleatórias passa 2.000 pagamentos por operações aleatórias em memória, e outro roda sequências aleatórias pelo service contra o PostgreSQL. Os dois conferem as invariantes do ledger depois de cada passo.
-- Concorrência contra PostgreSQL real: duas goroutines mandam o mesmo request com a mesma `Idempotency-Key` (20 rodadas, exatamente um pagamento por key), e 12 goroutines fazem refund do mesmo pagamento ao mesmo tempo (o total reembolsado nunca passa do capturado).
+- Concorrência contra PostgreSQL real: duas goroutines mandam o mesmo request com a mesma `Idempotency-Key` (20 rodadas, exatamente um pagamento por key), e 12 goroutines fazem refund do mesmo pagamento ao mesmo tempo (o total reembolsado nunca passa do capturado). Outros testes de corrida: uma captura contra um void (exatamente um vence), o job de expiração contra uma captura em andamento (a captura vence), e um cliente que desconecta no meio da chamada ao provedor (a chamada termina e é registrada mesmo assim).
+- Isolamento entre merchants: um segundo merchant recebe `404` em todas as rotas do pagamento de outro merchant, não consegue usar o card token dele, e a mesma `Idempotency-Key` em outro merchant nunca devolve a resposta guardada do primeiro.
 - Um teste manda números de cartão e CVVs (válidos e inválidos) pela API HTTP com log em debug. Depois confere que eles não aparecem em nenhuma linha de log, em nenhuma resposta de erro e em nenhuma linha de nenhuma tabela.
 - Fuzz tests para o parser de valores, Luhn, normalização do número do cartão e o parser do Pix.
 - Testes de guarda: nenhum `float32`/`float64` ou literal float no código de produção, nenhuma coluna float nas migrations, a spec OpenAPI é válida e bate com o router nos dois sentidos (inclusive quais rotas exigem `Idempotency-Key`).
@@ -291,7 +292,7 @@ As variáveis de ambiente estão na tabela do [README em inglês](README.md#conf
 - **Antifraude** e score de risco.
 - **Liquidação e conciliação.** Sem arquivos de liquidação, sem repasse ao merchant, sem taxas, sem chargeback ou disputa. Uma chamada ao provedor que dá timeout com resultado desconhecido é marcada como falha; um sistema real conciliaria isso com os relatórios do provedor.
 - **Multimoeda, parcelamento e várias capturas por autorização.**
-- **Questões de produção:** gestão de segredos (KMS para os webhook secrets), rate limit compartilhado entre réplicas e uma API de admin.
+- **Questões de produção:** gestão de segredos (KMS para os webhook secrets), rate limit compartilhado entre réplicas, uma API de admin e proteção contra SSRF nas URLs de webhook (faixas de IP privadas não são bloqueadas; só o operador define a URL, e redirects não são seguidos).
 
 ## Licença
 

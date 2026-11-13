@@ -281,7 +281,8 @@ Each one has an ADR in [docs/adr](docs/adr/) with the context and the trade-offs
 
 - Table-driven unit tests for the state machine, the ledger journals, money, Luhn, Pix payload, backoff, retry and breaker.
 - A random-sequence test runs 2,000 payments through random operations in memory, and another runs random sequences through the service against PostgreSQL. Both check the ledger invariants after every step.
-- Concurrency against real PostgreSQL: two goroutines send the same request with the same `Idempotency-Key` (20 rounds, exactly one payment per key), and 12 goroutines refund the same payment at once (the refunded total never passes the captured amount).
+- Concurrency against real PostgreSQL: two goroutines send the same request with the same `Idempotency-Key` (20 rounds, exactly one payment per key), and 12 goroutines refund the same payment at once (the refunded total never passes the captured amount). Other race tests: a capture against a void (exactly one wins), the expiry job against an in-flight capture (the capture wins), and a client that hangs up during a provider call (the call still finishes and is recorded).
+- Tenant isolation: a second merchant gets `404` on every route of another merchant's payment, cannot use its card token, and the same `Idempotency-Key` in another merchant never replays the first merchant's response.
 - A test sends real card numbers and CVVs (valid and invalid) through the HTTP API with debug logs on. It then checks that they appear in no log line, no error response, and no row of any table.
 - Fuzz tests for the amount parser, Luhn, card number normalization and the Pix parser.
 - Guard tests: no `float32`/`float64` or float literal in production code, no float column in migrations, the OpenAPI spec is valid, and it matches the router in both directions (also which routes need `Idempotency-Key`).
@@ -314,7 +315,7 @@ This is a study project. These parts of a real gateway are out of scope on purpo
 - **Antifraud** and risk scoring.
 - **Settlement and reconciliation.** No settlement files, no payouts to the merchant, no fees, no chargebacks or disputes. A provider call that times out with an unknown outcome is marked as failed; a real system would reconcile it against provider reports.
 - **Multi-currency, installments (parcelamento), and multiple captures per authorization.**
-- **Production concerns:** secret management (KMS for the webhook secrets), a shared rate limit across replicas, and an admin API.
+- **Production concerns:** secret management (KMS for the webhook secrets), a shared rate limit across replicas, an admin API, and SSRF checks on webhook URLs (private address ranges are not blocked; only the operator sets the URL, and redirects are not followed).
 
 ## License
 
