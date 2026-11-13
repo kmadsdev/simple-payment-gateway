@@ -4,6 +4,10 @@ Projeto de estudo: um payment gateway para uma loja online, em Go e PostgreSQL. 
 
 [Read in English](README.md)
 
+![Gravação de terminal: curl tokeniza um cartão de teste e depois cria, autoriza e captura parcialmente um pagamento](docs/media/simple-payment-gateway-purchase.gif)
+
+*Execução local do passo a passo do README.*
+
 ## O que ele faz
 
 A loja (o merchant) chama uma API REST a partir do backend dela, no momento do checkout. Não tem frontend.
