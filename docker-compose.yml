@@ -1,0 +1,43 @@
+# Local stack: gateway + PostgreSQL + the example webhook receiver.
+# Every credential here is a dev-only default for a local study setup.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway-dev-only
+      POSTGRES_DB: gateway
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U gateway -d gateway"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    environment:
+      DATABASE_URL: postgres://gateway:gateway-dev-only@postgres:5432/gateway?sslmode=disable
+      HTTP_ADDR: ":8080"
+      LOG_LEVEL: info
+      SIMULATOR_ENABLED: "true"
+      WEBHOOK_SECRET: whsec_dev_only_change_me # used by create-merchant
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  webhook-receiver:
+    build:
+      context: .
+      target: receiver
+    environment:
+      WEBHOOK_SECRET: whsec_dev_only_change_me
+      ADDR: ":8081"
+
+volumes:
+  pgdata:
