@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"errors"
 	"io"
@@ -162,7 +163,13 @@ func (a *API) idempotent(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		h := sha256.New()
+		// The fingerprint is an HMAC keyed with the caller's API key, not a
+		// plain SHA-256. A tokenization body holds a card number and a CVV,
+		// which have little entropy: a plain hash in the database could be
+		// brute-forced. The API key is never stored, so a database copy
+		// alone cannot do that. A retry with the same key still matches.
+		apiKey, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		h := hmac.New(sha256.New, []byte(apiKey))
 		h.Write([]byte(r.Method + " " + r.URL.Path + "\n"))
 		h.Write(body)
 		hash := h.Sum(nil)

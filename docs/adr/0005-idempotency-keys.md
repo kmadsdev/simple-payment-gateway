@@ -9,7 +9,7 @@ Networks fail after the server has done the work. A store that retries "capture"
 ## Decision
 
 - Every `POST` needs an `Idempotency-Key` header (1 to 255 characters). Without it: `400`.
-- Table `idempotency_keys` with primary key `(merchant_id, key)`, the SHA-256 of method, path and body, a status, and the stored response.
+- Table `idempotency_keys` with primary key `(merchant_id, key)`, a fingerprint of the request, a status, and the stored response. The fingerprint is HMAC-SHA256 of method, path and body, keyed with the caller's API key. A plain SHA-256 would be unsafe here: the body of `POST /v1/card-tokens` holds a card number and a CVV, which have little entropy, so a plain hash in a database copy could be brute-forced. The API key is never stored, so the database alone cannot do that (tested).
 - Claim: `INSERT ... ON CONFLICT DO NOTHING`. The primary key makes the claim atomic, so two concurrent duplicates cannot both run.
 - Same key, same request, finished: replay the stored status and body with `Idempotent-Replayed: true`.
 - Same key, still running: `409 idempotency_request_in_progress`.

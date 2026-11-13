@@ -128,7 +128,7 @@ CREATE CONSTRAINT TRIGGER ledger_journal_balanced AFTER INSERT ON ledger_entries
 CREATE TABLE idempotency_keys (
     merchant_id    text NOT NULL REFERENCES merchants(id),
     key            text NOT NULL,
-    request_hash   bytea NOT NULL,           -- SHA-256 of method, path and body
+    request_hash   bytea NOT NULL,           -- HMAC-SHA256(api key, method, path, body)
     status         text NOT NULL CHECK (status IN ('in_progress', 'completed')),
     response_code  integer,
     response_body  bytea,

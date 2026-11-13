@@ -11,7 +11,7 @@ Card numbers (PAN) and security codes (CVV) are the most sensitive data a gatewa
 Cards:
 
 - `POST /v1/card-tokens` validates the number (digits only after removing spaces and dashes, 12 to 19 digits, Luhn), the CVV (3 digits, 4 for Amex) and the expiry.
-- The gateway keeps a random token, a brand guess from the number prefix, the last four digits and the expiry. The number and the CVV are never written to the database and never logged.
+- The gateway keeps a random token, a brand guess from the number prefix, the last four digits and the expiry. The number and the CVV are never written to the database and never logged. The idempotency fingerprint of a tokenization request covers them, so it is a keyed HMAC, not a plain hash (see ADR 0005).
 - Validation errors name the field, never the value. JSON decode errors return a fixed message, never the body.
 - Handlers never log request bodies. The logger also redacts attribute names like `number`, `cvv` and `authorization` as a second line of defense.
 - A test sends valid and invalid cards through the full HTTP stack with debug logs on, then searches the logs, the responses and every row of every table for the number and the CVV.
